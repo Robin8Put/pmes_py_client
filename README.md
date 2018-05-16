@@ -3,47 +3,33 @@
 This client allows to work with [Profile Management EcoSystem (PMES)](https://github.com/Robin8Put/pmes):
 
 - create client object
-	- registration
-	- authorization
-- then you can:
-	- save data in blockchain
-	- get data from blockchain
-	- get data owner wallet address
-	- set/get data description
+- set content in the blockchain
+- get content from the blockchain
+- set content description in the blockchain
+- get content description from the blockchain
+- change owner of data
+- sell content
 
-- `bip32keys` --- library for generating public / private keys / blockchain address
-    - `bip32keys` --- contain `Bip32Keys` class which allows generate public / private keys and sign / verify messages
-        - `__init__` --- init class with `entropy` or `private_key` parameter
-        - `init_from_entropy` --- generate public / private keys based on entropy
-        - `init_from_private_key` --- generate public / private keys based on private key
-        - `get_public_key` --- return generated public key
-        - `get_private_key` --- return generated private key
-        - `get_uncompressed_public_key` --- return generated uncompressed public key
-        - `sign_msg` --- sign message with private_key
-        - `sign_message` --- static function
-        - `verify_msg` --- verify message with signature and public_key
-        - `verify_message` --- static function
-        - `to_uncompressed_public_key` --- convert public key to uncompressed public key
-        - `to_compressed_public_key` --- convert uncompressed public key to public key
-    - `bip32NetworkKeys` --- contain `Bip32NetworkKeys` class which was based on `Bip32Keys`
-        - `__init__` --- init class with `wif` or `entropy` or `private_key` parameter
-        - `get_wif` --- return generated wif
-        - `wif_to_private_key` --- convert wif to private key
-        - `private_key_to_wif` --- convert private key to wif
-    - `bip32addresses` --- contain `Bip32Addresses` class which was based on `Bip32NetworkKeys`
-        - `__init__` --- init class with `wif` or `entropy` or `private_key` parameter, `magic_byte` parameter should be passed also
-        - `get_hex_address` --- return hex address generated based on public key
-        - `get_blockchain_address` --- blockchain address generated based on hex address
-        - `public_key_to_hex_address` --- convert public key to hex address
-        - `hex_address_to_blockchain_address` --- convert hex address to blockchain address
-        - `address_to_hex` --- convert address to hex format. Drop magic byte and checksum
-        - `is_valid_address` --- check is address valid
-        - `get_magic_byte` --- return magic byte
-- `qtum_utils` --- packet that contains class `Qtum` which was based on the `Bip32Addresses`
-    - `get_qtum_address` --- return qtum address
-    - `hex_to_qtum_address` --- convert hex to qtum address
-    - `public_key_to_qtum_address` --- convert public key to qtum address
-    - `is_valid_qtum_address` --- check is qtum address valid
+- `PMESClient` --- client module
+    - `__init__` --- init class with host of server
+    - `gen_keys` --- generate public / private keys and write to `keys.json`
+    - `fill_form` --- fill information about user such as email, phone number and device id
+    - `create_account` --- create new account
+    - `get_account_data` --- get account info
+    - `get_balance` --- get account balance
+    - `get_data_from_blockchain` --- get content from blockchain
+    - `post_data_to_blockchain` --- write content to blockchain
+    - `get_last_block_id` --- get last blockid
+    - `get_owner` --- get owner of content
+    - `change_owner` --- change owner to new one by providing his public key
+    - `set_content_description` --- set content description
+    - `get_content_description` --- get content description
+    - `get_access_string` --- get access string
+    - `sell_content` --- sell content
+- `account.json` --- contain user data (email, phone number and device id)
+- `cookies.json` --- save hash and cid of stored content in PMES
+- `generated.json` --- set of public and private keys. Used for choosing default value for changing owner, selling content, etc.
+- `keys.json` --- contain user public and private keys
 
 ## Installation
 
@@ -64,8 +50,52 @@ pip3 install -r requirements.txt
 
 ## Running Client module
 
-For running application run bash command:
+For running application run `python3` and initialize `PMESClient`.
 
 ```bash
-python3 main.py
+from client import PMESClient
+c = PMESClient()
+```
+
+Check client by running next command:
+
+```bash
+c.get_last_block_id()
+```
+
+Create account:
+
+```bash
+c.gen_keys()
+c.fill_form()
+c.create_account()
+```
+
+Result will be:
+
+```bash
+{
+    'public_key': '04582af6644c05180b11198425349dc8cd8f06cbde67dd5152e1ab03a4e4080af4cd5748e7e7f1ffe3852db05758623aae4c93e8d59c876c293e52cdfcef25f6ab', 
+    'email': 'test@gmail.com', 
+    'device_id': 'some_id', 
+    'count': '1', 
+    'level': '2', 
+    'id': 2, 'href': '/api/accounts/04582af6644c05180b11198425349dc8cd8f06cbde67dd5152e1ab03a4e4080af4cd5748e7e7f1ffe3852db05758623aae4c93e8d59c876c293e52cdfcef25f6ab', 
+    'balance': 0, 
+    'address': 'QUvEvQWiJz3iPBpvSQQPLC1xXA7T5V25Xp'
+}
+```
+
+Write content to blockchain, wait until it writes them to the blockchain and return cid back to you (near 5 minutes). After that, add description:
+
+```bash
+c.post_data_to_blockchain()
+c.get_data_from_blockchain()
+c.set_content_description()
+```
+
+For changing owner you need to pass access string. The access string is any not empty string.
+
+```bash
+c.change_owner()
 ```
