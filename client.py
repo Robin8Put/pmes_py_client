@@ -18,6 +18,7 @@ from hashlib import sha256
 from ecdsa import SigningKey, VerifyingKey
 import ecdsa
 import logging
+from jsonrpcclient.http_client import HTTPClient
 
 decode_hex = codecs.getdecoder("hex_codec")
 encode_hex = codecs.getencoder("hex_codec")
@@ -425,7 +426,6 @@ class BIP32Key(object):
         print("     * (prv b58):  ", self.ExtendedKey(private=True, encoded=True))
 
 
-
 class Bip32Keys:
 
     def __init__(self, init_params):
@@ -568,7 +568,32 @@ class Bip32Keys:
             raise Exception('Unsupported signature format')
 
 
+class Cookies:
+    class Type:
+        account = "cookies/account.json"
+        cookies = "cookies/cookies.json"
+        keys = "cookies/keys.json"
 
+    @classmethod
+    def get(cls, cookie_type):
+        with open(cookie_type) as accountfile:
+            account = json.load(accountfile)
+        return account
+
+    @classmethod
+    def set(cls, cookie_type, data):
+        with open(cookie_type, "w+") as accountfile:
+            accountfile.write(json.dumps(data))
+
+    @classmethod
+    def clear(cls, cookie_type):
+        Cookies.set(cookie_type, {})
+
+    @classmethod
+    def clear_all(cls):
+        Cookies.set(Cookies.Type.account, {})
+        Cookies.set(Cookies.Type.cookies, {})
+        Cookies.set(Cookies.Type.keys, {})
 
 class PMESClient(object):
     def __init__(self, host="http://127.0.0.1:8000"):
@@ -576,424 +601,428 @@ class PMESClient(object):
         #self.host = "http://127.0.0.1:8000"
         self.host = host
 
+        # Cookies.clear_all()
+
     @classmethod
     def _get_time_stamp(cls):
         ts = time.time()
         return datetime.datetime.fromtimestamp(ts).strftime('%Y%m%d%H%M')
 
-
-    @classmethod
-    def _make_message(cls, data={}):
-        data["timestamp"] = PMESClient._get_time_stamp() 
-        return json.dumps(data)
-
-
     def gen_keys(self):
-        with open("generated.json") as generated:
+        with open("cookies/generated.json") as generated:
             keys = random.choice(json.load(generated))
-        with open("keys.json", "w") as keyfile:
-            keyfile.write(json.dumps(keys))
-        print("Generating keys for you...")
+        Cookies.set(Cookies.Type.keys, keys)
+        print("Generating keys...")
         time.sleep(2)
-        print("Done!")
-        print("It saved at 'keys.json' file.")
+        print("Public and private keys saved at 'cookies/keys.json' file.")
 
-
+    def _input_variable(self, message, default=None):
+        while True:
+            var = input(message) or default
+            if var:
+                break
+        return var
 
     def fill_form(self):
-        with open("account.json", "w") as accountfile:
-            while True:
-                email = input("Insert your e-mail (required): ")
-                if email:
-                    break
-            while True:
-                device_id = input("Insert your device id (required): ")
-                if device_id:
-                    break
-            phone = input("Insert your phone (optional): ")
-            data = {"email":email, "device_id":device_id}
-            if phone:
-                data.update({"phone":phone})
-            accountfile.write(json.dumps(data))
-            print("Your account data submited.")
+        email = self._input_variable("* Insert your e-mail: ")
+        device_id = self._input_variable("* Insert your device id: ")
+        phone = input("Insert your phone (optional): ")
 
+        data = {"email":email, "device_id":device_id}
+        if phone:
+            data.update({"phone":phone})
 
+        Cookies.set(Cookies.Type.account, data)
+        print("Account data submited.")
+
+    def _is_response_json(self, request):
+        try:
+            return request.json()
+        except:
+            print(request.text)
+            return None
+
+    def help(self):
+        print("===   Profile Management EcoSystem client (PMES client)   ===")
+        print("Commands:")
+        print(" - gen_keys")
+        print(" - fill_form")
+        print(" - create_account")
+        print(" - get_account_data")
+        print(" - get_data_from_blockchain")
+        print(" - post_data_to_blockchain")
+        print(" - get_content_description")
+        print(" - set_content_description")
+        print(" - get_content_price")
+        print(" - set_content_price")
+        print(" - increment_balance")
+        print(" - make_offer_from_buyer_to_seller")
+        print(" - accept_offer_from_buyer")
+        print(" - reject_offer_from_buyer")
+        print(" - reject_offer_from_owner")
+        print(" - news")
+        print(" - get_all_content")
 
     def create_account(self):
-        endpoint = input("Insert url address ('/api/accounts' by default): ") or "/api/accounts"
-        with open("keys.json") as keyfile:
-            keys = json.load(keyfile)
-        with open("account.json") as accountfile:
-            account = json.load(accountfile)
-        message = PMESClient._make_message({
+        Cookies.clear(Cookies.Type.cookies)
+
+        endpoint = "/api/accounts"
+        url = "%s%s" % (self.host, endpoint)
+
+        keys = Cookies.get(Cookies.Type.keys)
+        account = Cookies.get(Cookies.Type.account)
+        message = {
+                "timestamp":PMESClient._get_time_stamp(),
                 "email":account["email"],
                 "device_id":account["device_id"]
-            })
+            }
+        if account["phone"]:
+            message["phone"] = account["phone"]
+        message = json.dumps(message)
         data = {
             "public_key": keys["public_key"],
             "message": message,
             "signature": Bip32Keys.sign_message(message, 
-                            keys["private_key"]),
-            "email": account["email"],
-            "device_id": account["device_id"]
+                            keys["private_key"])
         }
-        url = "%s%s" % (self.host, endpoint)
-        print("\nPOST request to %s\n" % url)
+
         time.sleep(2)
         request = requests.post(url, data=data)
-        try:
-            return request.json()
-        except:
-            return request.text
-
+        return self._is_response_json(request)
 
     def get_account_data(self):
-        with open("keys.json") as keyfile:
-            keys = json.load(keyfile)
-        endpoint = input("Insert your account address ('/api/accounts/%s') by default: " % keys["public_key"]) or "/api/accounts/%s" % keys["public_key"]
-        with open("account.json") as accountfile:
-            account = json.load(accountfile)
-        print("\nGET request to %s\n" % endpoint)
-        time.sleep(2)
-        message = PMESClient._make_message()
+        keys = Cookies.get(Cookies.Type.keys)
+        endpoint = "/api/accounts/%s" % keys["public_key"]
+        url = "%s%s" % (self.host, endpoint)
+
+        message = json.dumps({"timestamp": PMESClient._get_time_stamp(), "public_key": keys["public_key"]})
         params = {
             "public_key": keys["public_key"],
             "message": message,
             "signature": Bip32Keys.sign_message(message, 
                             keys["private_key"])
         }
-        url = "%s%s" % (self.host, endpoint)
-        request = requests.get(url, params=params)
-        try:
-            return request.json()
-        except:
-            return request.text
 
-
-    def get_balance(self):
-        with open("keys.json") as keyfile:
-            keys = json.load(keyfile)
-            endpoint = input("Insert your url address ('/api/accounts/%s/balance' by default): " % keys["public_key"]) or "/api/accounts/%s/balance" % keys["public_key"]
-        with open("account.json") as accountfile:
-            account = json.load(accountfile)
-        print("GET request to /api/accounts/%s/%s" % (
-                    keys["public_key"], "balance"))
         time.sleep(2)
-        message = PMESClient._make_message()
-        params = {
-            "public_key": keys["public_key"],
-            "message": message,
-            "signature": Bip32Keys.sign_message(message, 
-               keys["private_key"])
-            }
-        url = "%s%s" % (self.host, endpoint)
         request = requests.get(url, params=params)
-        print("\nGET request to %s\n" % url)
-        try:
-            return request.json()
-        except:
-            return request.text
-
-
+        return self._is_response_json(request)
 
     def get_data_from_blockchain(self):
-        endpoint = input("Insert endpoint ('/api/blockchain/data') by default: ") or "/api/blockchain/data"
-        try:
-            with open("cookies.json") as cookiefile:
-                cookies = json.load(cookiefile)
-        except:
-            cookies={}
+        keys = Cookies.get(Cookies.Type.keys)
+        endpoint = "/api/blockchain/%s/content" % keys["public_key"]
+        url = "%s%s" % (self.host, endpoint)
 
-        _hash = input("Insert hash (or i`ll get it from your cookies): ")
-        cid = input("Insert cid (or i`ll get it from your cookies): ")
+        cookies = Cookies.get(Cookies.Type.cookies)
+
+        print("One of the parameters (hash or CID) is required")
+        _hash = input("Hash: ")
+        cid = input("cid: ")
         if not _hash and not cid:
+            print("Read hash and cid from cookies")
             _hash = cookies.get("hash", None)
             if not _hash:
                 cid = cookies.get("cid", None)
 
-        with open("keys.json") as keyfile:
-            keys = json.load(keyfile)
-        with open("account.json") as accountfile:
-            account = json.load(accountfile)
-        print("GET request to " + endpoint)
-        time.sleep(2)
-        message = PMESClient._make_message(account)
+        if not (_hash or cid):
+            print("Hash and cid are empty")
+            return
+
+        account = Cookies.get(Cookies.Type.account)
+        message = account.copy()
+        message["timestamp"] = PMESClient._get_time_stamp(),
+        message = json.dumps(message)
         params = {}
         if _hash:
             params["hash"] = _hash
         if cid:
             params["cid"] = cid
-        url = "%s%s" % (self.host, endpoint)
+
+        time.sleep(2)
         request = requests.get(url, params=params)
-        try:
-            with open("cookies.json") as cookiefile:
-                cookie = json.load(cookiefile)
-            with open("cookies.json", "w") as cookiefile:
-                if _hash:
-                    cookie["hash"] = _hash
+        res = self._is_response_json(request)        
+        if res:
+            if "error" in res.keys():
+                if res["error"] == "Hash not found":
+                    print("Content is writing to the blockchain. Try to repeat request latter, please")
+                else:
+                    print(res)
+                return
 
-                    if request.json()["cid"] and isinstance(request.json()["cid"], str) or isinstance(request.json()["cid"], int):
-                        cookie["cid"] = request.json()["cid"]
-                    else:
-                        cookie["cid"] = None
-                if cid:
-                    cookie["hash"] = None
-                    cookie["cid"] = cid
+            if _hash:
+                cookies["hash"] = _hash
 
-                cookiefile.write(json.dumps(cookie))
-            return request.json()
-        except:
-            return request.text
+                if res["cid"] and isinstance(res["cid"], str) or isinstance(res["cid"], int):
+                    cookies["cid"] = res["cid"]
+                else:
+                    cookies["cid"] = None
+            if cid:
+                cookies["hash"] = None
+                cookies["cid"] = cid
 
+            Cookies.set(Cookies.Type.cookies, cookies)
+
+            return res
 
     def post_data_to_blockchain(self):
-        endpoint = input("Insert your url ('/api/blockchain/data' by default): ") or "/api/blockchain/data"
-        cus = input("Insert your data (required): ") or "My favorite data"
-        with open("keys.json") as keyfile:
-            keys = json.load(keyfile)
-        with open("account.json") as accountfile:
-            account = json.load(accountfile)
-        print("POST request to " + endpoint)
-        time.sleep(2)
-        message = PMESClient._make_message({"cus":cus})
-        data = {
-            "public_key": keys["public_key"],
-            "message": message,
-            "signature": Bip32Keys.sign_message(message, 
-                            keys["private_key"]),
-            "cus": cus
-        }
-        
+        keys = Cookies.get(Cookies.Type.keys)
+        endpoint = "/api/blockchain/%s/content" % keys["public_key"]
         url = "%s%s" % (self.host, endpoint)
-        request = requests.post(url, data=data)
-        try:
-            with open("cookies.json") as cookiefile:
-                cookie = json.load(cookiefile)
-        except:
-            cookie = {}
 
-        _hash = None
-        if "hash" in request.json().keys():
-            _hash = request.json()["hash"]
-        
-        with open("cookies.json", "w") as cookiefile:
-            cookie["hash"] = _hash
-            cookie["cid"] = None
-            cookiefile.write(json.dumps(cookie))
+        cus = self._input_variable("* Content (default 'My favorite data'): ", "My favorite data")
+        price = self._input_variable("* Price (default 10): ", 10)
+        description = self._input_variable("* Description (default 'description'): ", "description")
 
-        if _hash:
-            return "Your hash is: %s" % _hash
-        else:
-            return request.text
-
-
-
-
-    def get_last_block_id(self):
-        endpoint = input("Insert your url ('/api/blockchain/lastblockid' by default): ") or "/api/blockchain/lastblockid"
-        url = "%s%s" % (self.host, endpoint)
-        request = requests.get(url)
-        try:
-            return request.json()
-        except:
-            return request.text
-
-        
-    def get_owner(self):
-        endpoint = input("Insert your url ('/api/blockchain/owner' by default): ") or "/api/blockchain/owner"
-        try:
-            with open("cookies.json") as cookiefile:
-                cookies = json.load(cookiefile)
-        except:
-            cookies = {}
-        while True:
-            cid = input("Insert cid (or i`ll receive it from the cookies if the one does exist): ") or cookies.get("cid", None)
-            if cid:
-                break
-            else:
-                print("Insert cid. There is not any cid`s at cookies.")
-                continue
-        url = "%s%s" % (self.host, endpoint)
-        request = requests.get(url, params={"cid": cid})
-        try:
-            return request.json()
-        except:
-            return request.text
-
-
-
-    def change_owner(self):
-        endpoint = input("Insert your url ('/api/blockchain/owner' by default): ") or "/api/blockchain/owner"
-        try:
-            with open("cookies.json") as cookiefile:
-                cookies = json.load(cookiefile)
-        except:
-            cookies = {}
-        cid = input("Insert cid (or i`ll receive it from the cookies): ") or cookies.get("cid", None)
-        with open("generated.json") as genfile:
-            genkeys = json.load(genfile)
-            randkeys = random.choice(genkeys)
-        with open("cookies.json") as cookiefile:
-            cookies = json.load(cookiefile)
-        new_owner_pubkey = input("Insert new owner public key (or the one`ll be generated by default): ") or randkeys["public_key"]
-        access_string = input("Insert access string (or i`ll get it from cookies): ") or cookies.get("access_string", None)
-        with open("keys.json") as keyfile:
-            keys = json.load(keyfile)
-        with open("account.json") as accountfile:
-            account = json.load(accountfile)
-        print("POST request to " + endpoint)
-        time.sleep(2)
-        message = PMESClient._make_message({
-                "cid":cid,
-                "new_owner": new_owner_pubkey,
-                "access_string": access_string
+        message = json.dumps({
+                "timestamp": PMESClient._get_time_stamp(),
+                "cus":cus,
+                "price": price,
+                "description": description
             })
         data = {
             "public_key": keys["public_key"],
             "message": message,
             "signature": Bip32Keys.sign_message(message, 
-                            keys["private_key"]),
-            "cid":cid,
-            "new_owner": new_owner_pubkey,
-            "access_string": access_string
+                            keys["private_key"])
         }
-        url = "%s%s" % (self.host, endpoint)
-        request = requests.put(url, data=data)
-        try:
-            return request.json()
-        except:
-            return request.text
-
-
-    def set_content_description(self):
-        endpoint = input("Insert your url address ('/api/blockchain/description' by default): ") or "/api/blockchain/description"
-        description = input("Insert description ('my description' by default)") or "my description"
-        try:
-            with open("cookies.json") as cookiefile:
-                cookie = json.load(cookiefile)
-        except:
-            cookie = {}
-        while True:
-            cid = input("Insert cid (or i`ll receive it from the cookies if the one does exist): ") or cookie.get("cid", None)
-            if cid:
-                break
-            else:
-                print("Insert cid. There is not any cid`s at cookies.")
-                continue
-        with open("keys.json") as keyfile:
-            keys = json.load(keyfile)   
-        message = PMESClient._make_message({
-                "cid":cid,
-                "descr": description,
-            })
-        data = {
-            "public_key": keys["public_key"],
-            "message": message,
-            "signature": Bip32Keys.sign_message(message, 
-                            keys["private_key"]),
-            "cid":cid,
-            "descr": description
-        }
-        url = "%s%s" % (self.host, endpoint)
+        
+        time.sleep(2)
         request = requests.post(url, data=data)
-        try:
-            return request.json()
-        except:
-            return request.text
+        res = self._is_response_json(request)
+        if res:
+            if "error" in res.keys():
+                print(res)
+                return
 
+            print("Hash = %s" % res["hash"])
 
+            _hash = None
+            if "hash" in res.keys():
+                _hash = res["hash"]
+
+            cookies = Cookies.get(Cookies.Type.cookies)
+            cookies["hash"] = _hash
+            cookies["cid"] = None
+            Cookies.set(Cookies.Type.cookies, cookies)
 
     def get_content_description(self):
-        endpoint = input("Insert your url ('/api/blockchain/description') by default: ") or "/api/blockchain/description"
-        try:
-            with open("cookies.json") as cookiefile:
-                cookie = json.load(cookiefile)
-        except:
-            cookie = {}
-        while True:
-            cid = input("Insert cid (or i`ll receive it from the cookies if the one does exist): ") or cookie.get("cid", None)
-            if cid:
-                break
-            else:
-                print("Insert cid. There is not any cid`s at cookies.")
-                continue
-        if not endpoint:
-                endpoint = "/api/blockchain/description"
+        cookies = Cookies.get(Cookies.Type.cookies)
+        endpoint = "/api/blockchain/%s/description" % cookies["cid"]
+
+        cid = self._input_variable("* CID (default from cookies): ", cookies.get("cid", None))
+
         params = {"cid":cid}
         url = "%s%s" % (self.host, endpoint)
         request = requests.get(url, params=params)
-        try:
-            return request.json()
-        except:
-            return request.text
+        return self._is_response_json(request)
 
+    def set_content_description(self):
+        cookies = Cookies.get(Cookies.Type.cookies)
+        endpoint = "/api/blockchain/%s/description" % cookies["cid"]
+        description = input("Insert description ('my description' by default): ") or "my description"
 
-    def get_access_string(self):
-        endpoint = input("Insert your url ('/api/blockchain/access_string' by default): ") or "/api/blockchain/access_string"
-        try:
-            with open("cookies.json") as cookiefile:
-                cookies = json.load(cookiefile)
-        except:
-            cookies = {}
-        while True:
-            cid = input("Insert cid (or i`ll receive it from the cookies if the one does exist): ") or cookies.get("cid", None)
-            if cid:
-                break
-            else:
-                print("Insert cid. There is no any cid`s at cookies.")
-                continue
-        params = {"cid":cid}
-        url = "%s%s" % (self.host, endpoint)
-        request = requests.get(url, params=params)
-        try:
-            return request.json()
-        except:
-            return request.text
+        cid = self._input_variable("* CID (default from cookies): ", cookies.get("cid", None))
 
-
-    def sell_content(self):
-        endpoint = input("Insert your url ('/api/blockchain/sale' by default): ") or "/api/blockchain/sale"
-        try:
-            with open("cookies.json") as cookiefile:
-                cookie = json.load(cookiefile)
-        except:
-            cookie = {}
-        while True:
-            cid = input("Insert cid (or i`ll receive it from the cookies if the one does exist): ") or cookie.get("cid", None)
-            if cid:
-                break
-            else:
-                print("Insert cid. There is not any cid`s at cookies.")
-                continue
-        with open("generated.json") as genfile:
-            genkeys = json.load(genfile)
-            randkeys = random.choice(genkeys)
-        buyer_pubkey = input("Insert buyer public key (or the one will be generated by default): ") or randkeys["public_key"]
-        access_string = input("Insert access string: ") or cookie.get("access_string", None)
-        with open("keys.json") as keyfile:
-            keys = json.load(keyfile)
-        with open("account.json") as accountfile:
-            account = json.load(accountfile)
-        print("POST request to " + endpoint)
-        time.sleep(2)
-        message = PMESClient._make_message({
+        keys = Cookies.get(Cookies.Type.keys)   
+        message = json.dumps({
+                "timestamp":PMESClient._get_time_stamp(),
                 "cid":cid,
-                "buyer_pubkey": buyer_pubkey,
-                "access_string": access_string
+                "description": description,
             })
         data = {
             "public_key": keys["public_key"],
             "message": message,
             "signature": Bip32Keys.sign_message(message, 
-                            keys["private_key"]),
-            "cid":cid,
-            "buyer_pubkey": buyer_pubkey,
-            "access_string": access_string
+                            keys["private_key"])
         }
+
         url = "%s%s" % (self.host, endpoint)
         request = requests.post(url, data=data)
-        try:
-            return request.json()
-        except:
-            return request.text
+        return self._is_response_json(request)
 
+    def get_content_price(self):
+        cookies = Cookies.get(Cookies.Type.cookies)
+        endpoint = "/api/blockchain/%s/price" % cookies["cid"]
+
+        cid = self._input_variable("* CID (default from cookies): ", cookies.get("cid", None))
+
+        params = {"cid":cid}
+        url = "%s%s" % (self.host, endpoint)
+        request = requests.get(url, params=params)
+        return self._is_response_json(request)
+
+    # Check that it return "price"
+    def set_content_price(self):
+        cookies = Cookies.get(Cookies.Type.cookies)
+        endpoint = "/api/blockchain/%s/price" % cookies["cid"]
+        price = input("Insert price (100 by default): ") or 100
+
+        cid = self._input_variable("* CID (default from cookies): ", cookies.get("cid", None))
+
+        keys = Cookies.get(Cookies.Type.keys)   
+        message = json.dumps({
+                "timestamp":PMESClient._get_time_stamp(),
+                "cid":cid,
+                "price": price,
+            })
+        data = {
+            "public_key": keys["public_key"],
+            "message": message,
+            "signature": Bip32Keys.sign_message(message, 
+                            keys["private_key"])
+        }
+
+        url = "%s%s" % (self.host, endpoint)
+        request = requests.post(url, data=data)
+        if self._is_response_json(request):
+            print("\nYour price is: " + str(request.json()["price"]))
+
+    def make_offer_from_buyer_to_seller(self):
+        cookies = Cookies.get(Cookies.Type.cookies)
+        cid = self._input_variable("* CID (default from cookies): ", cookies.get("cid", None))
+
+        keys = Cookies.get(Cookies.Type.keys)   
+        message = json.dumps({
+                "timestamp":PMESClient._get_time_stamp(),
+                "cid":cid,
+                "buyer_access_string": keys["public_key"],
+            })
+        data = {
+            "public_key": keys["public_key"],
+            "message": message,
+            "signature": Bip32Keys.sign_message(message, 
+                            keys["private_key"])
+        }
+
+        endpoint = "/api/blockchain/%s/offer" % keys["public_key"]
+        url = "%s%s" % (self.host, endpoint)
+        request = requests.post(url, data=data)
+        return self._is_response_json(request)
+
+    def accept_offer_from_buyer(self):
+        cookies = Cookies.get(Cookies.Type.cookies)
+        cid = self._input_variable("* CID (default from cookies): ", cookies.get("cid", None))
+        buyer_pubkey = self._input_variable("* Buyer public key: ")
+
+        keys = Cookies.get(Cookies.Type.keys)   
+        message = json.dumps({
+                "timestamp":PMESClient._get_time_stamp(),
+                "cid":cid,
+                "buyer_access_string": keys["public_key"],
+                "buyer_pubkey": buyer_pubkey
+            })
+        data = {
+            "public_key": keys["public_key"],
+            "message": message,
+            "signature": Bip32Keys.sign_message(message, 
+                            keys["private_key"])
+        }
+
+        endpoint = "/api/blockchain/%s/deal" % keys["public_key"]
+        url = "%s%s" % (self.host, endpoint)
+        request = requests.post(url, data=data)
+        return self._is_response_json(request)
+
+    def reject_offer_from_buyer(self):
+        cookies = Cookies.get(Cookies.Type.cookies)
+        cid = self._input_variable("* CID (default from cookies): ", cookies.get("cid", None))
+        buyer_addr = self._input_variable("* Your address: ")
+
+        keys = Cookies.get(Cookies.Type.keys)
+        message = json.dumps({
+                "timestamp":PMESClient._get_time_stamp(),
+                "offer_id":{
+                    "cid":cid,
+                    "buyer_addr": buyer_addr
+                }
+            })
+        data = {
+            "public_key": keys["public_key"],
+            "message": message,
+            "signature": Bip32Keys.sign_message(message,
+                            keys["private_key"])
+        }
+
+        endpoint = "/api/blockchain/%s/offer" % keys["public_key"]
+        url = "%s%s" % (self.host, endpoint)
+        request = requests.put(url, data=data)
+        return self._is_response_json(request)
+
+    def reject_offer_from_owner(self):
+        cookies = Cookies.get(Cookies.Type.cookies)
+        cid = self._input_variable("* CID (default from cookies): ", cookies.get("cid", None))
+        buyer_addr = self._input_variable("* Buyer address: ")
+
+        keys = Cookies.get(Cookies.Type.keys)
+        message = json.dumps({
+                "timestamp":PMESClient._get_time_stamp(),
+                "offer_id":{
+                    "cid":cid,
+                    "buyer_addr": buyer_addr
+                }
+            })
+        data = {
+            "public_key": keys["public_key"],
+            "message": message,
+            "signature": Bip32Keys.sign_message(message,
+                            keys["private_key"])
+        }
+
+        endpoint = "/api/blockchain/%s/offer" % keys["public_key"]
+        url = "%s%s" % (self.host, endpoint)
+        request = requests.put(url, data=data)
+        return self._is_response_json(request)
+
+    # Delete function when it becomes unnecessary
+    def increment_balance(self):
+        amount = self._input_variable("* Amount (default 100): ", 100)
+
+        account = self.get_account_data()
+        if not account:
+            print("Error with account")
+            return
+        uid = account["id"]
+
+        print("\n[+] -- Refilling buyers balance")
+        time.sleep(1)
+        port = "8004"
+        endpoint = "/api/balance"
+        host = self.host.split(':')
+        url = "%s:%s:%s%s" % (host[0], host[1], port, endpoint)
+        client = HTTPClient(url)
+        client.request(method_name="incbalance", uid=uid, amount=amount)
+        response = client.request(method_name="getbalance", uid=uid)
+        print("\nBuyers balance is: " + str(response[str(uid)]))
+
+    def news(self):
+        keys = Cookies.get(Cookies.Type.keys)
+        message = json.dumps({
+                "timestamp":PMESClient._get_time_stamp()
+            })
+        data = {
+            "public_key": keys["public_key"],
+            "message": message,
+            "signature": Bip32Keys.sign_message(message, 
+                            keys["private_key"])
+        }
+
+        endpoint = "/api/accounts/%s/news" % keys["public_key"]
+        url = "%s%s" % (self.host, endpoint)
+        request = requests.get(url, data=data)
+        return self._is_response_json(request)
+
+    def get_all_content(self):
+        endpoint = "/api/blockchain/content"
+        url = "%s%s" % (self.host, endpoint)
+        request = requests.get(url)
+        res = self._is_response_json(request)
+        if res:
+            print("=======================   Content   =======================")
+            print("Found {} items\n".format(len(res)))
+            for content in res:
+                print("Description: {}".format(content["description"]))
+                print("Owner: {}".format(content["owneraddr"]))
+                print("Price: {}".format(content["price"]))
+                print("cid: {}".format(content["cid"]))
+                print()
+        else:
+            print(res)
