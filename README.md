@@ -27,6 +27,7 @@ This client allows to work with [Profile Management EcoSystem (PMES)](https://gi
     - `set_content_price` --- set content price
     - `increment_balance` --- increment user balance (temporary solution. It will be done in other module)
     - `make_offer_from_buyer_to_seller` --- make offer to buy content from buyer to seller
+    - `make_offer_from_buyer_to_seller_woth_price` --- make offer to buy content by own price from buyer to seller
     - `accept_offer_from_buyer` --- content owner can accept offer to buy content from buyer
     - `reject_offer_from_owner` --- content owner can reject offer to buy content from buyer
     - `reject_offer_from_buyer` --- buyer can reject his offer to buy content
