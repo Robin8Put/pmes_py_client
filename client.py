@@ -86,6 +86,8 @@ class PMESClientBackend(object):
             request = requests.post(url, data=self._sign_message(message))
         elif request_type == RequestType.put:
             request = requests.put(url, data=self._sign_message(message))
+        else:
+            return None
         return self._is_response_json(request)
 
     def gen_keys(self):
@@ -218,7 +220,7 @@ class PMESClientBackend(object):
                 "timestamp":PMESClientBackend._get_time_stamp(),
                 "cid":cid,
                 "buyer_access_string": keys["public_key"],
-                "offer_price":price
+                "price":price
             }
         return self._send_request(RequestType.post, endpoint, message)
 
@@ -228,7 +230,7 @@ class PMESClientBackend(object):
         message = {
                 "timestamp":PMESClientBackend._get_time_stamp(),
                 "cid":cid,
-                "buyer_access_string": keys["public_key"],
+                "buyer_access_string": buyer_pubkey,
                 "buyer_pubkey": buyer_pubkey
             }
         return self._send_request(RequestType.post, endpoint, message)
@@ -407,7 +409,7 @@ class PMESClient(object):
 
     def set_content_price(self):
         cookies = Cookies.get(Cookies.Type.cookies)
-        price = self._input_variable("* Price", 100)
+        price = self._input_variable("* Price", 5)
         cid = self._input_variable("* CID", cookies.get("cid", None))
         res = self.client.set_content_price(cid, price)
         print("\nYour price is: " + str(res["price"]))
