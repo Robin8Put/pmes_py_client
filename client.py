@@ -387,7 +387,7 @@ class PMESClient(object):
         cus = self._input_variable("* Content", "My favorite data")
         price = self._input_variable("* Price", 10)
         description = self._input_variable("* Description", "description")
-        res = self.client.post_data_to_blockchain(cus, price * pow(10, DECIMAL), description)
+        res = self.client.post_data_to_blockchain(cus, float(price) * pow(10, DECIMAL), description)
         pp.pprint(res)
 
     def set_content_description(self):
@@ -420,7 +420,7 @@ class PMESClient(object):
     def make_offer_from_buyer_to_seller_with_price(self):
         cid = self._input_variable("* CID")
         price = self._input_variable("* New price", 5)
-        res = self.client.make_offer_from_buyer_to_seller_with_price(cid, price * pow(10, DECIMAL))
+        res = self.client.make_offer_from_buyer_to_seller_with_price(cid, float(price) * pow(10, DECIMAL))
         if not res:
             return
         if "error" in res:
@@ -452,7 +452,7 @@ class PMESClient(object):
     # Delete function when it becomes unnecessary
     def increment_balance(self):
         amount = self._input_variable("* Amount", 100)
-        res = self.client.increment_balance(amount * pow(10, DECIMAL))
+        res = self.client.increment_balance(float(amount) * pow(10, DECIMAL))
         if not res:
             return
         if "error" in res:
