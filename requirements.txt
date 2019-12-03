@@ -1,7 +1,7 @@
 bip32utils
 certifi==2018.4.16
 chardet==3.0.4
-ecdsa==0.13
+ecdsa==0.13.3
 future==0.16.0
 idna==2.6
 jsonschema==2.6.0
